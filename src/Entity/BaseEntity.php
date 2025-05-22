@@ -27,7 +27,7 @@ abstract class BaseEntity
         $refObject = $this->getReflectionObject();
         foreach ($refObject->getProperties(\ReflectionProperty::IS_PUBLIC | \ReflectionProperty::IS_PROTECTED) as $property) {
             // Skip properties marked with #[Sensitive]
-            if ($property->getAttributes(\App\Attributes\Sensitive::class)) {
+            if ($property->getAttributes(\Orm\Attribute\Sensitive::class)) {
                 continue;
             }
             $name = $property->getName();
@@ -50,7 +50,7 @@ abstract class BaseEntity
             if ($refClass->hasProperty($name)) {
                 $property = $refClass->getProperty($name);
                 // Skip properties marked with #[Sensitive]
-                if ($property->getAttributes(\App\Attributes\Sensitive::class)) {
+                if ($property->getAttributes(\Orm\Attribute\Sensitive::class)) {
                     continue;
                 }
                 if ($property->isPublic() || $property->isProtected()) {

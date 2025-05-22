@@ -3,6 +3,7 @@ namespace Orm\Repository;
 
 use PDO;
 use Orm\Entity\BaseEntity;
+use Orm\Collection\EntityCollection;
 
 abstract class BaseRepository
 {
@@ -143,13 +144,13 @@ abstract class BaseRepository
     }
 
     /**
-     * Gibt alle Entities zurück (optional: mit Limit/Offset).
+     * Gibt alle Entities als Collection zurück (optional: mit Limit/Offset).
      *
      * @param int|null $limit
      * @param int|null $offset
-     * @return BaseEntity[]
+     * @return EntityCollection
      */
-    public function findAll(int $limit = null, int $offset = null): array
+    public function findAll(int $limit = null, int $offset = null): EntityCollection
     {
         $sql = sprintf("SELECT * FROM %s", $this->tableName);
         if ($limit !== null) {
@@ -167,6 +168,6 @@ abstract class BaseRepository
             $entity->fromArray($row);
             $entities[] = $entity;
         }
-        return $entities;
+        return new EntityCollection($entities);
     }
 }
