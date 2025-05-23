@@ -20,13 +20,15 @@ abstract class BaseRepository
 
     /**
      * Leitet die zugehörige Entity-Klasse anhand des Repository-Klassennamens ab.
-     * Beispiel: UserRepository => \Orm\Entity\UserEntity
+     * Beispiel: Orm\Repository\UserRepository => Orm\Entity\UserEntity
      */
     protected function resolveEntityClass(): string
     {
-        $repoClass = (new \ReflectionClass($this))->getShortName();
-        $entityBase = preg_replace('/Repository$/', '', $repoClass);
-        return 'Orm\\Entity\\' . $entityBase . 'Entity';
+        $repoClass = get_class($this);
+        // Ersetze 'Repository' Namespace durch 'Entity' Namespace
+        $entityClass = str_replace('\\Repository\\', '\\Entity\\', $repoClass);
+        // Ersetze am Ende 'Repository' durch 'Entity'
+        return preg_replace('/Repository$/', 'Entity', $entityClass);
     }
 
     /**
