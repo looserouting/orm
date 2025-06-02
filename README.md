@@ -35,3 +35,13 @@ $user->username = "test";
 $repo->save($user);
 
 print_r($repo->find($user->id));
+
+
+Insert Scripts into composer.json of your project
+---
+{
+  "scripts": {
+    "create-entity": "php vendor/looserouting/orm/bin/create.php entity"
+    "migrate": "php vendor/looserouting/orm/bin/migrate.php"
+  }
+}

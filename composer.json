@@ -9,7 +9,7 @@
         }
     },
     "bin": [
-        "bin/orm-cli.php"
+        "bin/migration.php"
     ],
     "require": {
         "php": ">=8.0"
