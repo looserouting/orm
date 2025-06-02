@@ -5,8 +5,6 @@ ORM for my Micro Framework
 
 Entity:
 use Orm\Entity\BaseEntity;
-use Orm\Schema\Attribute\Table;
-use Orm\Schema\Attribute\Column;
 
 #[Table('users')]
 class User extends BaseEntity
@@ -21,34 +19,17 @@ class User extends BaseEntity
 Repository:
 use Orm\Repository\BaseRepository;
 
-class UserRepository extends BaseRepository
-{
-    public function save(BaseEntity $entity): void {
-        /** @var User $entity */
-        $stmt = $this->pdo->prepare("INSERT INTO users (username) VALUES (:username)");
-        $stmt->execute(['username' => $entity->username]);
-        $entity->id = $this->pdo->lastInsertId();
-    }
+class UserRepository extends BaseRepository {}
 
-    public function find(int $id): ?User {
-        $stmt = $this->pdo->prepare("SELECT * FROM users WHERE id = ?");
-        $stmt->execute([$id]);
-        $row = $stmt->fetch();
-        if (!$row) return null;
-        $user = new User();
-        $user->id = $row['id'];
-        $user->username = $row['username'];
-        return $user;
-    }
-}
+Collection:
+Transaction:
 
+Migration:
+php bin/migration.php init
 
 Mini-Test:
-$orm = new Orm(new PDO('sqlite::memory:'));
-$sql = $orm->schemaGenerator->generateSQL(User::class);
-$orm->pdo->exec($sql);
-
-$repo = new UserRepository($orm->pdo);
+$pdo = new PDO('sqlite::memory:');
+$repo = new UserRepository($pdo);
 $user = new User();
 $user->username = "test";
 $repo->save($user);

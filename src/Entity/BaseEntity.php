@@ -7,6 +7,8 @@ abstract class BaseEntity
     private ?\ReflectionObject $reflectionObject = null;
     private ?\ReflectionClass $reflectionClass = null;
 
+    private static array $nonSensitivePropertiesCache = [];
+
     protected function getReflectionClass(): \ReflectionClass
     {
         return $this->reflectionClass ??= new \ReflectionClass($this);
@@ -18,20 +20,34 @@ abstract class BaseEntity
     }
 
     /**
+     * Gibt die nicht-sensitiven öffentlichen und geschützten Eigenschaften der Entität zurück.
+     */
+    protected function getNonSensitiveProperties(): array
+    {
+        $class = static::class;
+        if (!isset(self::$nonSensitivePropertiesCache[$class])) {
+            $refObject = $this->getReflectionObject();
+            $props = [];
+            foreach ($refObject->getProperties(\ReflectionProperty::IS_PUBLIC | \ReflectionProperty::IS_PROTECTED) as $property) {
+                if (!$property->getAttributes(\Orm\Attribute\Sensitive::class)) {
+                    $props[] = $property;
+                }
+            }
+            self::$nonSensitivePropertiesCache[$class] = $props;
+        }
+        return self::$nonSensitivePropertiesCache[$class];
+    }
+
+    /**
      * Wandelt die aktuellen Eigenschaften der Entität in ein assoziatives Array um.
      * Nur öffentliche und geschützte Eigenschaften werden berücksichtigt.
      */
     final public function toArray(): array
     {
         $array = [];
-        $refObject = $this->getReflectionObject();
-        foreach ($refObject->getProperties(\ReflectionProperty::IS_PUBLIC | \ReflectionProperty::IS_PROTECTED) as $property) {
-            // Skip properties marked with #[Sensitive]
-            if ($property->getAttributes(\Orm\Attribute\Sensitive::class)) {
-                continue;
-            }
+        foreach ($this->getNonSensitiveProperties() as $property) {
             $name = $property->getName();
-            $array[$name] = $this->$name;
+            $array[$name] = $property->getValue($this);
         }
         return $array;
     }
@@ -54,39 +70,9 @@ abstract class BaseEntity
                     continue;
                 }
                 if ($property->isPublic() || $property->isProtected()) {
-                    // Example: basic type and value validation
                     $type = $property->getType();
                     if ($type && !is_null($value)) {
-                        $valid = false;
-                        if ($type instanceof \ReflectionUnionType) {
-                            foreach ($type->getTypes() as $unionType) {
-                                $typeName = $unionType->getName();
-                                if (
-                                    ($typeName === 'int' && is_int($value)) ||
-                                    ($typeName === 'string' && is_string($value)) ||
-                                    ($typeName === 'float' && is_float($value)) ||
-                                    ($typeName === 'bool' && is_bool($value)) ||
-                                    ($typeName === 'array' && is_array($value)) ||
-                                    ($typeName === 'null' && is_null($value))
-                                ) {
-                                    $valid = true;
-                                    break;
-                                }
-                            }
-                        } elseif ($type instanceof \ReflectionNamedType) {
-                            $typeName = $type->getName();
-                            if (
-                                ($typeName === 'int' && is_int($value)) ||
-                                ($typeName === 'string' && is_string($value)) ||
-                                ($typeName === 'float' && is_float($value)) ||
-                                ($typeName === 'bool' && is_bool($value)) ||
-                                ($typeName === 'array' && is_array($value)) ||
-                                ($typeName === 'null' && is_null($value))
-                            ) {
-                                $valid = true;
-                            }
-                        }
-                        if (!$valid) {
+                        if (!$this->isValidType($type, $value)) {
                             throw new \InvalidArgumentException("Property `$name` expects {$type}, " . gettype($value) . " given.");
                         }
                     }
@@ -94,8 +80,8 @@ abstract class BaseEntity
                     if (is_string($value)) {
                         $value = trim($value);
                     }
-                    if (method_exists($this, 'set' . ucfirst($name))) {
-                        $setter = 'set' . ucfirst($name);
+                    $setter = 'set' . ucfirst($name);
+                    if (method_exists($this, $setter)) {
                         $this->$setter($value);
                     } else {
                         $property->setValue($this, $value);
@@ -103,5 +89,41 @@ abstract class BaseEntity
                 }
             }
         }
+    }
+
+    /**
+     * Validiert den Typ eines Wertes gegen den erwarteten ReflectionType.
+     *
+     * @param \ReflectionType $type
+     * @param mixed $value
+     * @return bool
+     */
+    private function isValidType(\ReflectionType $type, $value): bool
+    {
+        if ($type instanceof \ReflectionUnionType) {
+            foreach ($type->getTypes() as $unionType) {
+                if ($this->isValidType($unionType, $value)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if ($type instanceof \ReflectionNamedType) {
+            $typeName = $type->getName();
+            if ($type->isBuiltin()) {
+                return match ($typeName) {
+                    'int' => is_int($value),
+                    'string' => is_string($value),
+                    'float' => is_float($value),
+                    'bool' => is_bool($value),
+                    'array' => is_array($value),
+                    'null' => is_null($value),
+                    default => true,
+                };
+            } else {
+                return $value instanceof $typeName;
+            }
+        }
+        return true;
     }
 }
