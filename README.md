@@ -25,7 +25,7 @@ Collection:
 Transaction:
 
 Migration:
-php bin/migration.php init
+php bin/migrate.php init
 
 Mini-Test:
 $pdo = new PDO('sqlite::memory:');
