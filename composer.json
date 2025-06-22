@@ -9,7 +9,8 @@
         }
     },
     "bin": [
-        "bin/migration.php"
+        "bin/migrate.php",
+        "bin/create.php"
     ],
     "require": {
         "php": ">=8.0"
