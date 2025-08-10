@@ -172,4 +172,28 @@ abstract class BaseRepository
         }
         return new EntityCollection($entities);
     }
+
+    /**
+     * Findet eine Entität anhand eines beliebigen Property-Namens und Werts.
+     *
+     * @param string $property
+     * @param mixed $value
+     * @return BaseEntity|null
+     */
+    public function findOneBy(string $property, $value): ?BaseEntity
+    {
+        $sql = sprintf("SELECT * FROM %s WHERE %s = :value LIMIT 1", $this->tableName, $property);
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':value', $value);
+        $stmt->execute();
+        $data = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$data) {
+            return null;
+        }
+
+        $entity = new $this->entityClass();
+        $entity->fromArray($data);
+        return $entity;
+    }
 }
