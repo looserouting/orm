@@ -21,7 +21,7 @@ class User extends BaseEntity
 
 Repository:
 ```php
- Orm\Repository\BaseRepository;
+use looserouting\orm\Repository\BaseRepository;
 
 class UserRepository extends BaseRepository {}
 ```
