@@ -4,9 +4,11 @@ namespace TEST;
 use PHPUnit\Framework\TestCase;
 use Orm\Repository\BaseRepository;
 use Orm\Entity\BaseEntity;
+use Orm\Attribute\Id;
 
 class RepoDummyEntity extends BaseEntity
 {
+    #[Id]
     public int $id = 0;
     public string $name = '';
 
@@ -27,7 +29,7 @@ class BaseRepositoryTest extends TestCase
     {
         $this->pdo = new \PDO('sqlite::memory:');
         $this->pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-        $this->pdo->exec('CREATE TABLE repo_dummy (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)');
+        $this->pdo->exec('CREATE TABLE repo_dummys (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)');
         $this->repo = new RepoDummyRepository($this->pdo);
     }
 

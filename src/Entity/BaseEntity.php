@@ -1,106 +1,137 @@
 <?php
 namespace Orm\Entity;
 
-abstract class BaseEntity
+use Orm\Attribute\Sensitive;
+use Orm\Attribute\Id;
+use Orm\Attribute\Column;
+use ReflectionClass;
+use ReflectionObject;
+use ReflectionProperty;
+use ReflectionNamedType;
+use ReflectionUnionType;
+use InvalidArgumentException;
+
+abstract class BaseEntity implements EntityInterface
 {
+    private ?ReflectionObject $reflectionObject = null;
+    private ?ReflectionClass $reflectionClass = null;
 
-    private ?\ReflectionObject $reflectionObject = null;
-    private ?\ReflectionClass $reflectionClass = null;
+    private static array $propertiesCache = [];
 
-    private static array $nonSensitivePropertiesCache = [];
-
-    protected function getReflectionClass(): \ReflectionClass
+    protected function getReflectionClass(): ReflectionClass
     {
-        return $this->reflectionClass ??= new \ReflectionClass($this);
+        return $this->reflectionClass ??= new ReflectionClass($this);
     }
 
-    protected function getReflectionObject(): \ReflectionObject
+    protected function getReflectionObject(): ReflectionObject
     {
-        return $this->reflectionObject ??= new \ReflectionObject($this);
+        return $this->reflectionObject ??= new ReflectionObject($this);
     }
 
     /**
-     * Gibt die nicht-sensitiven öffentlichen und geschützten Eigenschaften der Entität zurück.
+     * Returns all relevant properties of the entity (including private ones).
      */
-    protected function getNonSensitiveProperties(): array
+    protected function getMappedProperties(): array
     {
         $class = static::class;
-        if (!isset(self::$nonSensitivePropertiesCache[$class])) {
+        if (!isset(self::$propertiesCache[$class])) {
             $refObject = $this->getReflectionObject();
             $props = [];
-            foreach ($refObject->getProperties(\ReflectionProperty::IS_PUBLIC | \ReflectionProperty::IS_PROTECTED) as $property) {
-                if (!$property->getAttributes(\Orm\Attribute\Sensitive::class)) {
-                    $props[] = $property;
+            foreach ($refObject->getProperties() as $property) {
+                // Skip internal ORM properties
+                if ($property->getDeclaringClass()->getName() === self::class) {
+                    continue;
                 }
+                $props[] = $property;
             }
-            self::$nonSensitivePropertiesCache[$class] = $props;
+            self::$propertiesCache[$class] = $props;
         }
-        return self::$nonSensitivePropertiesCache[$class];
+        return self::$propertiesCache[$class];
     }
 
     /**
-     * Wandelt die aktuellen Eigenschaften der Entität in ein assoziatives Array um.
-     * Nur öffentliche und geschützte Eigenschaften werden berücksichtigt.
+     * Converts the entity to an associative array.
      */
     final public function toArray(): array
     {
         $array = [];
-        foreach ($this->getNonSensitiveProperties() as $property) {
+        foreach ($this->getMappedProperties() as $property) {
+            if ($property->getAttributes(Sensitive::class)) {
+                continue;
+            }
+
+            $property->setAccessible(true);
             $name = $property->getName();
+            
+            // Check for Column attribute for name override
+            $colAttr = $property->getAttributes(Column::class);
+            if (!empty($colAttr)) {
+                $col = $colAttr[0]->newInstance();
+                if ($col->name) {
+                    $name = $col->name;
+                }
+            }
+
             $array[$name] = $property->getValue($this);
         }
         return $array;
     }
 
     /**
-     * Überträgt Werte aus einem Array auf die entsprechenden Eigenschaften der Entität.
-     * Nur Eigenschaften, die existieren, werden gesetzt. Private Eigenschaften werden ignoriert.
-     * 
-     * @param array $data Assoziatives Array mit Schlüsseln entsprechend den Eigenschaftsnamen der Entität.
-     *                    Beispiel: ['id' => int, 'name' => string, ...]
+     * Maps an array to the entity properties.
      */
     final public function fromArray(array $data): void
     {
         $refClass = $this->getReflectionClass();
+        $mappedProps = $this->getMappedProperties();
+        
+        // Create a lookup map for column name -> property
+        $columnMap = [];
+        foreach ($mappedProps as $prop) {
+            $colName = $prop->getName();
+            $colAttr = $prop->getAttributes(Column::class);
+            if (!empty($colAttr)) {
+                $col = $colAttr[0]->newInstance();
+                if ($col->name) {
+                    $colName = $col->name;
+                }
+            }
+            $columnMap[$colName] = $prop;
+        }
+
         foreach ($data as $name => $value) {
-            if ($refClass->hasProperty($name)) {
-                $property = $refClass->getProperty($name);
-                // Skip properties marked with #[Sensitive]
-                if ($property->getAttributes(\Orm\Attribute\Sensitive::class)) {
+            if (isset($columnMap[$name])) {
+                $property = $columnMap[$name];
+                
+                if ($property->getAttributes(Sensitive::class)) {
                     continue;
                 }
-                if ($property->isPublic() || $property->isProtected()) {
-                    $type = $property->getType();
-                    if ($type && !is_null($value)) {
-                        if (!$this->isValidType($type, $value)) {
-                            throw new \InvalidArgumentException("Property `$name` expects {$type}, " . gettype($value) . " given.");
-                        }
+
+                $type = $property->getType();
+                if ($type && !is_null($value)) {
+                    if (!$this->isValidType($type, $value)) {
+                        throw new InvalidArgumentException("Property `{$property->getName()}` (mapped from `$name`) expects {$type}, " . gettype($value) . " given.");
                     }
-                    // Optionally sanitize string values
-                    if (is_string($value)) {
-                        $value = trim($value);
-                    }
-                    $setter = 'set' . ucfirst($name);
-                    if (method_exists($this, $setter)) {
-                        $this->$setter($value);
-                    } else {
-                        $property->setValue($this, $value);
-                    }
+                }
+
+                if (is_string($value)) {
+                    $value = trim($value);
+                }
+
+                $setter = 'set' . ucfirst($property->getName());
+                if (method_exists($this, $setter)) {
+                    $this->$setter($value);
+                } else {
+                    $property->setAccessible(true);
+                    $property->setValue($this, $value);
                 }
             }
         }
     }
 
-    /**
-     * Validiert den Typ eines Wertes gegen den erwarteten ReflectionType.
-     *
-     * @param \ReflectionType $type
-     * @param mixed $value
-     * @return bool
-     */
     private function isValidType(\ReflectionType $type, $value): bool
     {
-        if ($type instanceof \ReflectionUnionType) {
+        if ($type instanceof ReflectionUnionType) {
             foreach ($type->getTypes() as $unionType) {
                 if ($this->isValidType($unionType, $value)) {
                     return true;
@@ -108,14 +139,14 @@ abstract class BaseEntity
             }
             return false;
         }
-        if ($type instanceof \ReflectionNamedType) {
+        if ($type instanceof ReflectionNamedType) {
             $typeName = $type->getName();
             if ($type->isBuiltin()) {
                 return match ($typeName) {
-                    'int' => is_int($value),
+                    'int' => is_int($value) || (is_string($value) && is_numeric($value) && (int)$value == $value),
                     'string' => is_string($value),
-                    'float' => is_float($value),
-                    'bool' => is_bool($value),
+                    'float' => is_float($value) || (is_string($value) && is_numeric($value)),
+                    'bool' => is_bool($value) || $value === 0 || $value === 1 || $value === '0' || $value === '1',
                     'array' => is_array($value),
                     'null' => is_null($value),
                     default => true,

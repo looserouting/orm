@@ -72,10 +72,11 @@ $entityTemplate = <<<PHP
 namespace $entityNamespace;
 
 use Orm\Entity\BaseEntity;
+use Orm\Attribute\Id;
 
 class $entityName extends BaseEntity
 {
-    // TODO: Füge hier deine Properties hinzu
+    #[Id]
     public int \$id = 0;
     public string \$name = '';
 }

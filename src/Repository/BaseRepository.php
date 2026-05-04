@@ -4,6 +4,10 @@ namespace Orm\Repository;
 use PDO;
 use Orm\Entity\BaseEntity;
 use Orm\Collection\EntityCollection;
+use Orm\Attribute\Id;
+use Orm\Attribute\Column;
+use ReflectionClass;
+use ReflectionProperty;
 
 abstract class BaseRepository
 {
@@ -18,40 +22,39 @@ abstract class BaseRepository
         $this->tableName = $this->resolveTableName();
     }
 
-    /**
-     * Leitet die zugehörige Entity-Klasse anhand des Repository-Klassennamens ab.
-     * Beispiel: Orm\Repository\UserRepository => Orm\Entity\UserEntity
-     */
     protected function resolveEntityClass(): string
     {
         $repoClass = get_class($this);
-        // Ersetze 'Repository' Namespace durch 'Entity' Namespace
         $entityClass = str_replace('\\Repository\\', '\\Entity\\', $repoClass);
-        // Ersetze am Ende 'Repository' durch 'Entity'
         return preg_replace('/Repository$/', 'Entity', $entityClass);
     }
 
-    /**
-     * Leitet den Tabellennamen aus dem Entity-Namen ab (snake_case, singular).
-     */
     protected function resolveTableName(): string
     {
-        $entityShort = (new \ReflectionClass($this->entityClass))->getShortName();
+        $reflection = new ReflectionClass($this->entityClass);
+        $entityShort = $reflection->getShortName();
         $entityShort = preg_replace('/Entity$/', '', $entityShort);
         $table = strtolower(preg_replace('/([a-z])([A-Z])/', '$1_$2', $entityShort));
-        return $table;
+        // Consistently use plural
+        return $table . 's';
     }
 
-    /**
-     * Erstellt eine neue Entität in der Datenbank.
-     *
-     * @param BaseEntity $entity
-     * @return void
-     */
+    protected function getPrimaryKeyName(): string
+    {
+        $reflection = new ReflectionClass($this->entityClass);
+        foreach ($reflection->getProperties() as $prop) {
+            if ($prop->getAttributes(Id::class)) {
+                return $prop->getName();
+            }
+        }
+        return 'id'; // Default
+    }
+
     public function create(BaseEntity $entity): void
     {
         $data = $entity->toArray();
-        unset($data['id']);
+        $pk = $this->getPrimaryKeyName();
+        unset($data[$pk]);
 
         $columns = array_keys($data);
         $placeholders = array_map(fn($col) => ':' . $col, $columns);
@@ -69,20 +72,20 @@ abstract class BaseRepository
         }
         $stmt->execute();
 
-        if (property_exists($entity, 'id')) {
-            $entity->id = $this->pdo->lastInsertId();
+        $id = $this->pdo->lastInsertId();
+        
+        $reflection = new ReflectionClass($entity);
+        if ($reflection->hasProperty($pk)) {
+            $prop = $reflection->getProperty($pk);
+            $prop->setAccessible(true);
+            $prop->setValue($entity, (int)$id);
         }
     }
 
-    /**
-     * Findet eine Entität anhand ihrer ID.
-     *
-     * @param int $id
-     * @return BaseEntity|null
-     */
-    public function findById(int $id): ?BaseEntity
+    public function findById(mixed $id): ?BaseEntity
     {
-        $sql = sprintf("SELECT * FROM %s WHERE id = :id", $this->tableName);
+        $pk = $this->getPrimaryKeyName();
+        $sql = sprintf("SELECT * FROM %s WHERE %s = :id", $this->tableName, $pk);
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':id', $id);
         $stmt->execute();
@@ -97,20 +100,16 @@ abstract class BaseRepository
         return $entity;
     }
 
-    /**
-     * Aktualisiert eine bestehende Entität.
-     *
-     * @param BaseEntity $entity
-     * @return void
-     */
     public function update(BaseEntity $entity): void
     {
         $data = $entity->toArray();
-        if (!isset($data['id'])) {
-            throw new \InvalidArgumentException('Entity must have an id for update.');
+        $pk = $this->getPrimaryKeyName();
+        
+        if (!isset($data[$pk])) {
+            throw new \InvalidArgumentException("Entity must have a primary key ($pk) for update.");
         }
-        $id = $data['id'];
-        unset($data['id']);
+        $id = $data[$pk];
+        unset($data[$pk]);
 
         $set = [];
         foreach ($data as $col => $val) {
@@ -118,9 +117,10 @@ abstract class BaseRepository
         }
 
         $sql = sprintf(
-            "UPDATE %s SET %s WHERE id = :id",
+            "UPDATE %s SET %s WHERE %s = :id",
             $this->tableName,
-            implode(', ', $set)
+            implode(', ', $set),
+            $pk
         );
 
         $stmt = $this->pdo->prepare($sql);
@@ -131,27 +131,15 @@ abstract class BaseRepository
         $stmt->execute();
     }
 
-    /**
-     * Löscht eine Entität anhand ihrer ID.
-     *
-     * @param int $id
-     * @return void
-     */
-    public function delete(int $id): void
+    public function delete(mixed $id): void
     {
-        $sql = sprintf("DELETE FROM %s WHERE id = :id", $this->tableName);
+        $pk = $this->getPrimaryKeyName();
+        $sql = sprintf("DELETE FROM %s WHERE %s = :id", $this->tableName, $pk);
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':id', $id);
         $stmt->execute();
     }
 
-    /**
-     * Gibt alle Entities als Collection zurück (optional: mit Limit/Offset).
-     *
-     * @param int|null $limit
-     * @param int|null $offset
-     * @return EntityCollection
-     */
     public function findAll(int $limit = null, int $offset = null): EntityCollection
     {
         $sql = sprintf("SELECT * FROM %s", $this->tableName);
@@ -173,13 +161,6 @@ abstract class BaseRepository
         return new EntityCollection($entities);
     }
 
-    /**
-     * Findet eine Entität anhand eines beliebigen Property-Namens und Werts.
-     *
-     * @param string $property
-     * @param mixed $value
-     * @return BaseEntity|null
-     */
     public function findOneBy(string $property, $value): ?BaseEntity
     {
         $sql = sprintf("SELECT * FROM %s WHERE %s = :value LIMIT 1", $this->tableName, $property);

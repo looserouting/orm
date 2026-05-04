@@ -4,6 +4,7 @@ namespace Orm\Collection;
 use IteratorAggregate;
 use ArrayIterator;
 use Countable;
+use Orm\Entity\EntityInterface;
 
 /**
  * Collection of entity objects.
@@ -13,24 +14,24 @@ use Countable;
 class EntityCollection implements IteratorAggregate, Countable
 {
     /**
-     * @param MyEntityInterface[] $items
+     * @param EntityInterface[] $items
      */
     public function __construct(protected array $items = []) {}
 
     /**
      * Add an entity to the collection.
      *
-     * @param MyEntityInterface $entity
+     * @param EntityInterface $entity
      * @return void
      */
-    public function add(MyEntityInterface $entity): void {
+    public function add(EntityInterface $entity): void {
         $this->items[] = $entity;
     }
 
     /**
      * Get all entities in the collection.
      *
-     * @return MyEntityInterface[]
+     * @return EntityInterface[]
      */
     public function all(): array {
         return $this->items;
@@ -39,7 +40,7 @@ class EntityCollection implements IteratorAggregate, Countable
     /**
      * Get all entities in the collection as an array.
      *
-     * @return MyEntityInterface[]
+     * @return EntityInterface[]
      */
     public function toArray(): array {
         return $this->all();

@@ -1,56 +1,127 @@
-# ORM
-ORM for my Micro Framework
+# ORM (Antigravity Edition)
 
-# Example
+A lightweight Object-Relational Mapper (ORM) for PHP 8.1+, focusing on simplicity, naming conventions, and built-in migration support.
 
-Entity:
+## Core Features
+
+- **Reflection-based Mapping**: Automatic property-to-column mapping.
+- **Support for Private Properties**: Clean encapsulation with full access for the ORM.
+- **Attribute-based Metadata**: Fine-grained control with `#[Id]`, `#[Column]`, and `#[Sensitive]`.
+- **Integrated Migrations**: Automatic schema extraction and SQL generation (Up/Down support).
+- **Type Validation**: Built-in validation including support for numeric strings from databases.
+
+## Usage
+
+### 1. Define your Entity
+
+Entities should extend `BaseEntity`. Use attributes to define your schema.
 
 ```php
 use Orm\Entity\BaseEntity;
+use Orm\Attribute\Id;
+use Orm\Attribute\Column;
+use Orm\Attribute\Sensitive;
 
-#[Table('users')]
-class User extends BaseEntity
+class UserEntity extends BaseEntity
 {
-    #[Column(name: 'id', type: 'INTEGER', primary: true, autoIncrement: true, nullable: false)]
-    public ?int $id = null;
+    #[Id]
+    private int $id;
 
-    #[Column(name: 'username', type: 'TEXT', nullable: false)]
-    public string $username;
+    #[Column(unique: true)]
+    private string $username;
+
+    #[Column(name: 'email_address')]
+    private string $email;
+
+    #[Sensitive]
+    private string $password;
+
+    // Getters and setters are supported but optional for the ORM
+    public function getId(): int { return $this->id; }
+    public function getUsername(): string { return $this->username; }
 }
 ```
 
-Repository:
+*Note: Table names are automatically pluralized (e.g., `UserEntity` -> `userentities` or `User` -> `users`). Use the naming convention `[Name]Entity` or just `[Name]`.*
+
+### 2. Define your Repository
+
+Repositories handle database operations.
+
 ```php
-use looserouting\orm\Repository\BaseRepository;
+use Orm\Repository\BaseRepository;
 
-class UserRepository extends BaseRepository {}
+class UserRepository extends BaseRepository 
+{
+    // Custom query methods can be added here
+}
 ```
 
-Collection:
+### 3. Database Operations
 
-Transaction:
-
-Migration:
-```
-php bin/migrate.php init
-```
-Mini-Test:
 ```php
-$pdo = new PDO('sqlite::memory:');
+$pdo = new PDO('sqlite:db.sqlite');
 $repo = new UserRepository($pdo);
-$user = new User();
-$user->username = "test";
-$repo->save($user);
 
-print_r($repo->find($user->id));
+// Create
+$user = new UserEntity();
+$user->fromArray([
+    'username' => 'johndoe',
+    'email_address' => 'john@example.com',
+    'password' => 'secret123'
+]);
+$repo->create($user);
+
+// Find
+$foundUser = $repo->findById($user->getId());
+
+// Update
+$foundUser->fromArray(['username' => 'john_fixed']);
+$repo->update($foundUser);
+
+// Delete
+$repo->delete($foundUser->getId());
+
+// Find All
+$allUsers = $repo->findAll(limit: 10, offset: 0); // Returns EntityCollection
 ```
 
-You may want to add this scripts into composer.json of your project
+### 4. Migration System
+
+The ORM can automatically manage your database schema.
+
+```bash
+# Initialize the schema (creates initial SQL and snapshot)
+php bin/migrate.php init
+
+# After changing your Entities, create a new migration
+php bin/migrate.php create
+
+# Run pending migrations
+php bin/migrate.php up
+
+# Revert migrations
+php bin/migrate.php down --to=20231027_120000
+
+# Check status
+php bin/migrate.php status
+```
+
+## Recommended Composer Scripts
+
+Add these to your `composer.json` for easier access:
+
 ```json
 {
   "scripts": {
-    "create": "php vendor/looserouting/orm/bin/create.php entity",
-    "migrate": "php vendor/looserouting/orm/bin/migrate.php"
+    "migrate": "php bin/migrate.php",
+    "create-entity": "php bin/create.php entity"
   }
 }
+```
+
+## Installation
+
+```bash
+composer require looserouting/orm
 ```
